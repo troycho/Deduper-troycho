@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import argparse
 import re
 
@@ -70,9 +70,16 @@ def getAlignment(line: str) -> tuple:
     leftpos: int = int(fields[3]) #1-based leftmost mapping position
     strand: str = returnStrand(bitflag)
     pos = findPosition(cigar, leftpos, strand) #5' mapping position
-    return (pos, strand)
+    if pos < 0:
+        raise RuntimeError("Invalid 5' position calculated")
+    else:
+        return (pos, strand)
 
 def main():
+    header_lines: int = 0 #number of header lines
+    bad_umis: int = 0 #number of invalid umis
+    dupli_count: int=0 #number of duplicates
+    unique: int = 0 #number of unique reads
     args = get_args()
     umis: set = set() 
     with open(args.umi, "r") as fh: #store valid UMIs from text file in set
@@ -85,17 +92,19 @@ def main():
     loc: dict[str, set] = {}
 
     with open(args.file, "r") as fh, open(args.outfile, "w") as wf:
-        current_chrom: int = 0
+        current_chrom: str = ""
         for line in fh:
             line = line.strip()
             if line.startswith("@"):
                 wf.write(f"{line}\n")
+                header_lines += 1
                 continue
             fields: list = line.split("\t")
             umi: str = fields[0].split(":")[-1] #extract UMI from QNAME
             if checkUMI(umi, umis) == False: #if not valid UMI
+                bad_umis += 1
                 continue
-            chrom: int = int(fields[2]) #chromosome number
+            chrom: str = fields[2] #chromosome number
             if chrom != current_chrom:
                 loc.clear()
                 current_chrom = chrom
@@ -103,10 +112,19 @@ def main():
             if umi not in loc: #if UMI not encountered previously
                 loc[umi] = {alignment}
                 wf.write(f"{line}\n")
+                unique += 1
             else: #if UMI was encountered already
                 if alignment not in loc[umi]: #only write the line if the position is not in dict
                     wf.write(f"{line}\n")
                     loc[umi].add(alignment)
+                    unique += 1
+                else:
+                    dupli_count += 1
+    # Report number of header lines, invalid UMIs, unique reads, and removed duplicates
+    print(f"Number of header lines: {header_lines}")
+    print(f"Number of wrong UMIs: {bad_umis}")
+    print(f"Number of unique reads: {unique}")
+    print(f"Number of duplicates: {dupli_count}")
 
 
 
@@ -114,7 +132,6 @@ def main():
 if __name__ == "__main__":
     main()
     # print(getAlignment("NS500451:154:HWKTMBGXX:1:11101:24260:1121:CTGTTCAC	0	2	76814284	36	71M	*	0	0	TCCACCACAATCTTACCATCCTTCCTCCAGACCACATCGCGTTCTTTGTTCAACTCACAGCTCAAGTACAA	6AEEEEEEAEEAEEEEAAEEEEEEEEEAEEAEEAAEE<EEEEEEEEEAEEEEEEEAAEEAAAEAEEAEAE/	MD:Z:71	NH:i:1	HI:i:1	NM:i:0	SM:i:36	XQ:i:40	X2:i:0	XO:Z:UU"))
-
     # print(findPosition("7M", 1, "-")) #7
     # print(findPosition("2M1D2M1I2M", 1, "+")) #1
     # print(findPosition("5M2S", 1, "-")) #7
